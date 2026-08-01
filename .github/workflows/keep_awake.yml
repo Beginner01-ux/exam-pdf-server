@@ -1,0 +1,15 @@
+name: Keep Streamlit App Awake
+
+on:
+  schedule:
+    # Runs every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  ping-app:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Streamlit App
+        run: |
+          curl -s https://exam-pdf-access-system-5rmr3rmpmnexhskp5tbsaw.streamlit.app/ > /dev/null
