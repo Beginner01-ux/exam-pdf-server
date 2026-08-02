@@ -2,7 +2,7 @@ name: Keep Streamlit App Awake
 
 on:
   schedule:
-    # Runs every 2 hours to keep the app warm and avoid sleep mode
+    # Runs every 2 hours to keep the app warm and prevent sleep mode
     - cron: '0 */2 * * *'
   workflow_dispatch:
 
@@ -23,47 +23,62 @@ jobs:
           node -e '
           const puppeteer = require("puppeteer");
           (async () => {
-            const browser = await puppeteer.launch({ 
-              headless: "new",
-              args: ["--no-sandbox", "--disable-setuid-sandbox"]
-            });
-            const page = await browser.newPage();
-            
-            // Set user agent so Streamlit maintains active WebSocket connections
-            await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-            
-            // Exam PDF Access App URL
-            const url = "https://exam-pdf-access-system-5rmr3rmpmnexhskp5tbsaw.streamlit.app/";
-            
-            console.log("Navigating to app...");
-            await page.goto(url, { waitUntil: "networkidle2", timeout: 90000 });
-            
-            // Look for the "Wake up" button
-            const wakeButton = await page.$("button");
-            
-            if (wakeButton) {
-              const text = await page.evaluate(el => el.textContent, wakeButton);
-              if (text && text.includes("Yes, get this app back up")) {
-                console.log("Wake up button found! Clicking it...");
-                await wakeButton.click();
+            let browser;
+            try {
+              console.log("Launching browser...");
+              browser = await puppeteer.launch({ 
+                headless: "new",
+                args: [
+                  "--no-sandbox", 
+                  "--disable-setuid-sandbox",
+                  "--disable-dev-shm-usage",
+                  "--disable-gpu"
+                ]
+              });
+              
+              const page = await browser.newPage();
+              await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+              
+              // Exam PDF Access System URL
+              const url = "https://exam-pdf-access-system-5rmr3rmpmnexhskp5tbsaw.streamlit.app/";
+              
+              console.log("Navigating to URL...");
+              await page.goto(url, { waitUntil: "networkidle0", timeout: 60000 });
+              
+              // Wait 5 seconds for Streamlit JavaScript JSbundle to initialize
+              await new Promise(r => setTimeout(r, 5000));
+              
+              // Search page HTML directly for the wake-up button text
+              const content = await page.content();
+              
+              if (content.includes("Yes, get this app back up")) {
+                console.log("App is sleeping! Finding button to click...");
                 
-                // WAIT for the wake-up screen to disappear completely (up to 90s)
-                console.log("Waiting for app to complete boot sequence...");
-                await page.waitForFunction(
-                  () => !document.body.innerText.includes("This app has gone to sleep"),
-                  { timeout: 90000 }
-                );
+                // Click any button containing the wakeup text
+                const clicked = await page.evaluate(() => {
+                  const buttons = Array.from(document.querySelectorAll("button"));
+                  const target = buttons.find(b => b.textContent.includes("Yes, get this app back up"));
+                  if (target) {
+                    target.click();
+                    return true;
+                  }
+                  return false;
+                });
                 
-                // Extra safety delay for WebSocket to register active session
-                await new Promise(r => setTimeout(r, 10000));
-                console.log("App successfully woken up and live!");
+                if (clicked) {
+                  console.log("Wake up button clicked successfully! Waiting 45s for container boot...");
+                  await new Promise(r => setTimeout(r, 45000));
+                }
               } else {
-                console.log("App was already awake!");
+                console.log("App is already active and awake!");
+                await new Promise(r => setTimeout(r, 5000));
               }
-            } else {
-              console.log("App active!");
+              
+            } catch (err) {
+              console.error("Execution error:", err);
+              process.exit(1);
+            } finally {
+              if (browser) await browser.close();
             }
-            
-            await browser.close();
           })();
           '
