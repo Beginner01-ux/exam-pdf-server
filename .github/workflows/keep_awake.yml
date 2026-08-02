@@ -2,14 +2,57 @@ name: Keep Streamlit App Awake
 
 on:
   schedule:
-    # Runs every 6 hours
-    - cron: '0 */6 * * *'
+    # Runs every 4 hours to guarantee it stays active
+    - cron: '0 */4 * * *'
   workflow_dispatch:
 
 jobs:
-  ping-app:
+  wake-streamlit:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Streamlit App
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Puppeteer
+        run: npm install puppeteer
+
+      - name: Open App and Click Wake Up Button
         run: |
-          curl -s https://exam-pdf-access-system-5rmr3rmpmnexhskp5tbsaw.streamlit.app/ > /dev/null
+          node -e '
+          const puppeteer = require("puppeteer");
+          (async () => {
+            const browser = await puppeteer.launch({ headless: "new" });
+            const page = await browser.newPage();
+            
+            // Your Streamlit App URL
+            const url = "https://exam-pdf-access-system-5rmr3rmpmnexhskp5tbsaw.streamlit.app/";
+            
+            console.log("Navigating to app...");
+            await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
+            
+            // Search for and click the wake-up button if present
+            const buttons = await page.$$("button");
+            let clicked = false;
+            
+            for (const button of buttons) {
+              const text = await page.evaluate(el => el.textContent, button);
+              if (text && text.includes("Yes, get this app back up")) {
+                console.log("Wake up button found! Clicking it...");
+                await button.click();
+                clicked = true;
+                // Wait 15 seconds for Streamlit server to boot up
+                await new Promise(r => setTimeout(r, 15000));
+                break;
+              }
+            }
+            
+            if (!clicked) {
+              console.log("App was already awake!");
+            }
+            
+            await browser.close();
+          })();
+          '
+          
